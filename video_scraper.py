@@ -17,6 +17,8 @@ from tqdm import tqdm
 from urllib.parse import urljoin, urlparse
 from typing import List, Dict, Optional
 from playwright.sync_api import sync_playwright, Response
+from utils import moon_progress_bar
+
 
 # Configure logging
 logging.basicConfig(
@@ -36,6 +38,8 @@ class VideoScraper:
         else:
             self.config = self.load_config(config_path)
         self.video_urls = []
+        self.status = "Initializing..."
+        self.found_count = 0
         
     def load_config(self, config_path: str) -> dict:
         """Load configuration file"""
@@ -105,69 +109,109 @@ class VideoScraper:
             pass
         return "Unknown"
 
-    def _sniff_url(self, context, url) -> Optional[Dict]:
-        """Sniff a single URL for video content"""
+    def _sniff_url(self, context, url) -> List[Dict]:
+        """Sniff a single URL for video content and return ALL found streams"""
+        self.status = f"🔍 Sniffing: {url[:30]}..."
+        self.found_count = 0
+        logger.info(f"--- 🚀 Starting Scrape Session ---")
+        logger.info(f"    Target: {url}")
+        
         page = context.new_page()
-        found_video = False
-        video_info = {}
+        found_videos = []
         
         # Event handler for network responses
         def handle_response(response):
-            nonlocal found_video, video_info
-            if found_video: return 
+            if self.found_count >= 15: return # Cap at 15 to prevent ad-bloat
             
             if self.is_video_content(response):
                 cl = response.headers.get('content-length')
                 if cl and int(cl) < 50000: 
                     return
 
-                logger.info(f"    🎥 Sniffed: {response.url[:60]}...")
                 video_info = {
                     'url': response.url,
                     'size': self.get_video_size(response),
                     'size_bytes': int(response.headers.get('content-length', 0)),
                     'page_url': url,
-                    'duration': None
+                    'duration': None,
+                    'content_type': response.headers.get('content-type', 'unknown')
                 }
-                found_video = True
+                
+                # Avoid duplicates in the same session
+                if not any(v['url'] == video_info['url'] for v in found_videos):
+                    logger.info(f"    🎥 Sniffed: {response.url[:60]}... ({video_info['size']})")
+                    found_videos.append(video_info)
+                    self.found_count = len(found_videos)
+                    self.status = f"🎯 Found {self.found_count} stream(s)..."
 
         page.on("response", handle_response)
         
         try:
+            self.status = "🌍 Navigating to page..."
+            logger.info(f"    🌍 Navigating to page...")
             page.goto(url, timeout=30000, wait_until="domcontentloaded")
             title = page.title()
+            logger.info(f"    📃 Page Title: {title}")
             
-            if not self.matches_keywords(title):
-                logger.info("    ⏩ Skipping (keywords mismatch)")
+            keywords = self.config.get('keywords')
+            if keywords and not self.matches_keywords(title):
+                self.status = "⏩ Filtered by keywords"
+                logger.warning(f"    ⏩ Filtered out by keyword mismatch ('{title[:40]}...')")
+                logger.info(f"       Required Keywords: {', '.join(keywords)}")
                 page.close()
-                return None
+                return []
                 
-            if found_video: video_info['title'] = title
+            for v in found_videos:
+                v['title'] = title
 
-            if not found_video:
-                logger.info("    ⏳ Waiting for video traffic...")
+            if not found_videos:
+                self.status = "⏳ Attempting interaction..."
+                logger.info("    ⏳ No direct video detected yet. Attempting interaction...")
                 try:
-                    page.tap('video', timeout=1000)
-                    page.tap('.play-button', timeout=1000)
+                    # Try to trigger playback
+                    page.evaluate("""() => {
+                        const video = document.querySelector('video');
+                        if (video) {
+                            video.play().catch(() => {});
+                            video.click();
+                        }
+                        const playButtons = [
+                            ...document.querySelectorAll('button'),
+                            ...document.querySelectorAll('.play-button'),
+                            ...document.querySelectorAll('[class*="play"]')
+                        ];
+                        playButtons.forEach(b => b.click());
+                    }""")
                 except:
                     pass
                     
                 start_wait = time.time()
                 timeout_duration = self.config.get('wait_timeout', 30)
+                logger.info(f"    ⏳ Waiting up to {timeout_duration}s for video streams...")
                 while time.time() - start_wait < timeout_duration: 
-                    if found_video: break
+                    if found_videos: 
+                        # If we found at least one video, and it's been a few seconds, or we have many, stop.
+                        if len(found_videos) >= 3 or (time.time() - start_wait > 5):
+                            break
+                    self.status = f"⏳ Sniffing... ({int(timeout_duration - (time.time() - start_wait))}s left)"
                     page.wait_for_timeout(500)
             
-            if found_video:
-                if 'title' not in video_info: video_info['title'] = title
+            if found_videos:
+                self.status = f"🎯 Found {len(found_videos)} streams. Finalizing..."
+                logger.info(f"    🎯 Found {len(found_videos)} video stream(s).")
                 try:
+                    # Duration check can sometimes hang, use a shorter timeout or skip if complex
                     duration = page.evaluate("() => { const v = document.querySelector('video'); return v ? v.duration : null; }")
                     if duration:
-                        video_info['duration'] = duration
+                        for v in found_videos:
+                            v['duration'] = duration
                         logger.info(f"    ⏱️ Duration: {duration:.2f}s")
                 except:
                     pass
-                return video_info
+                return found_videos
+            else:
+                logger.warning("    🛑 No video streams found after timeout.")
+                return []
         
         except Exception as e:
             logger.warning(f"    ⚠️ Error loading page: {e}")
@@ -185,7 +229,7 @@ class VideoScraper:
             )
             result = self._sniff_url(context, url)
             browser.close()
-            return [result] if result else []
+            return result
 
     def scrape_full(self, main_url: str) -> List[Dict]:
         """Existing behavior: scan main page for links and sniff each"""
@@ -220,9 +264,9 @@ class VideoScraper:
             # --- Step 2: Sniff each link ---
             for idx, link in enumerate(target_links, 1):
                 logger.info(f"[{idx}/{len(target_links)}] Processing: {link}")
-                res = self._sniff_url(context, link)
-                if res:
-                    all_video_results.append(res)
+                res_list = self._sniff_url(context, link)
+                if res_list:
+                    all_video_results.extend(res_list)
             
             browser.close()
         return all_video_results
@@ -284,7 +328,8 @@ class VideoScraper:
         else:
             logger.info("✅ No existing duplicates found.")
 
-    def download_videos(self, results: List[Dict[str, str]], auto_download: bool = False):
+    def download_videos(self, results: List[Dict[str, str]], auto_download: bool = False, progress_callback=None):
+
         """Interactive or automatic download of found videos"""
         if not results:
             return []
@@ -398,6 +443,13 @@ class VideoScraper:
                         for chunk in r.iter_content(chunk_size=8192):
                             f.write(chunk)
                             bar.update(len(chunk))
+                            if total_size > 0:
+                                percent = (bar.n / total_size) * 100
+                                bar_str = moon_progress_bar(percent)
+                                self.status = f"📥 Downloading: {bar_str} {percent:.1f}%"
+                                if progress_callback:
+                                    progress_callback(bar_str, percent)
+
                             
                 logger.info(f"    ✅ Download complete: {safe_filename}")
                 video['local_path'] = os.path.abspath(final_file_path)
@@ -405,11 +457,16 @@ class VideoScraper:
                 local_files_sizes[final_file_path] = os.path.getsize(final_file_path)
             
             except requests.exceptions.RequestException as e:
-                logger.error(f"    ❌ Network error for {safe_filename}: {e}")
+                logger.error(f"    ❌ Network error for {safe_filename}:")
+                logger.error(f"       URL: {url[:100]}...")
+                logger.error(f"       Type: {type(e).__name__}")
+                logger.error(f"       Details: {str(e)}")
                 if os.path.exists(final_file_path):
                     os.remove(final_file_path)
             except Exception as e:
-                logger.error(f"    ❌ Download failed for {safe_filename}: {e}")
+                logger.error(f"    ❌ Download failed for {safe_filename}:")
+                logger.error(f"       Type: {type(e).__name__}")
+                logger.error(f"       Details: {str(e)}")
                 if os.path.exists(final_file_path):
                     os.remove(final_file_path)
         
@@ -425,7 +482,7 @@ class VideoScraper:
         output_file = os.path.join('output', self.config.get('output_file', 'videos.csv'))
         
         with open(output_file, 'w', newline='', encoding='utf-8-sig') as f:
-            writer = csv.DictWriter(f, fieldnames=['title', 'url', 'size', 'duration', 'page_url'])
+            writer = csv.DictWriter(f, fieldnames=['title', 'url', 'size', 'duration', 'page_url', 'size_bytes', 'local_path'], extrasaction='ignore')
             writer.writeheader()
             writer.writerows(results)
         

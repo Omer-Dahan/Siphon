@@ -1,14 +1,5 @@
 @echo off
-if not exist "venv\Scripts\activate" (
-    echo [ERROR] Virtual environment (venv) not found!
-    echo Please create it first using: python -m venv venv
-    pause
-    exit /b
-)
-
-echo [OK] Activating virtual environment...
-call venv\Scripts\activate
-
-echo Starting Siphon Video Scraper Bot...
+cd /d "%~dp0"
+call venv\Scripts\activate.bat
 python bot.py
 pause
