@@ -97,7 +97,7 @@ class JDownloaderClient:
     def get_linkgrabber_links(self, wait_for_extraction: bool = True, timeout: int = 30) -> List[Dict]:
         """
         Get list of links from LinkGrabber.
-        If wait_for_extraction is True, waits until JD2 finishes processing.
+        If wait_for_extraction is True, waits until JD2 finishes processing (link count stabilizes).
         Returns list of dicts with: uuid, name, url, size, enabled, etc.
         """
         if not self.ensure_connected():
@@ -131,12 +131,29 @@ class JDownloaderClient:
                             "availability": link.get("availability", "UNKNOWN")
                         })
                 
-                if not wait_for_extraction or all_links:
+                current_count = len(all_links)
+                
+                # If not waiting for extraction, return immediately
+                if not wait_for_extraction:
                     links = all_links
                     break
                 
+                # Stability check: wait until link count stops changing
+                if current_count == last_count and current_count > 0:
+                    stable_count_duration += 1
+                    if stable_count_duration >= STABILITY_THRESHOLD:
+                        logger.info(f"✅ LinkGrabber stabilized with {current_count} links")
+                        links = all_links
+                        break
+                else:
+                    # Count changed, reset stability timer
+                    stable_count_duration = 0
+                    last_count = current_count
+                
+                # Timeout check
                 if time.time() - start_time > timeout:
-                    logger.warning("⏱️ LinkGrabber extraction timeout")
+                    logger.warning(f"⏱️ LinkGrabber extraction timeout (found {current_count} links)")
+                    links = all_links
                     break
                 
                 time.sleep(1)
