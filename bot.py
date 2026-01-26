@@ -619,7 +619,7 @@ async def handle_message(client, message):
 # File Extensions
 VIDEO_EXTENSIONS = {'.mp4', '.mkv', '.webm', '.avi', '.mov', '.ts', '.m4v', '.wmv', '.flv', '.3gp', '.mpg', '.mpeg'}
 
-async def process_jd_links(client, user_id, message_to_edit, urls):
+async def process_jd_links(client, user_id, message_to_edit, urls, deep_scan=False):
     """Helper to process a list of URLs with JD2."""
     try:
         jd = get_jd_client()
@@ -630,7 +630,8 @@ async def process_jd_links(client, user_id, message_to_edit, urls):
         
         # 2. Add Links to LinkGrabber
         combined_links = "\n".join(urls)
-        success = await loop.run_in_executor(executor, jd.add_to_linkgrabber, combined_links)
+        # Pass deep_scan to jd_client
+        success = await loop.run_in_executor(executor, jd.add_to_linkgrabber, combined_links, None, deep_scan)
         
         if not success:
             await message_to_edit.edit_text("❌ Failed to add links to JDownloader.")
@@ -712,26 +713,14 @@ async def handle_callbacks(client, callback_query):
         
         if data == "scan_regular":
             await callback_query.message.edit_text("🔍 **מבצע סריקה רגילה...**")
-            await process_jd_links(client, user_id, callback_query.message, [url])
+            await process_jd_links(client, user_id, callback_query.message, [url], deep_scan=False)
             
         elif data == "scan_deep":
-            await callback_query.message.edit_text("🕷️ **מבצע סריקה עמוקה (מוצא קישורים פנימיים)...**\nזה עשוי לקחת כמה שניות.")
+            # Using JDownloader Native Deep Decrypt (Level 2+)
+            await callback_query.message.edit_text("🕷️ **מבצע סריקה עמוקה (JDownloader Deep-Decrypt)...**\nזה עשוי לקחת כמה שניות.")
             try:
-                # Import here to avoid circular if any, or just standard
-                from crawling import get_deep_links
-                
-                loop = asyncio.get_event_loop()
-                deep_links = await loop.run_in_executor(executor, get_deep_links, url)
-                
-                if not deep_links:
-                     await callback_query.message.edit_text("❌ סריקה עמוקה לא מצאה קישורים נוספים. מנסה את הקישור המקורי...")
-                     deep_links = [url]
-                else:
-                     await callback_query.message.edit_text(f"✅ נמצאו {len(deep_links)} קישורים פנימיים!\nשולח ל-JDownloader...")
-                
-                # Add original URL just in case? Usually deep scan means found sub-links.
-                # If we found links, we procss them. 
-                await process_jd_links(client, user_id, callback_query.message, deep_links)
+                # Pass deep_scan=True to process_jd_links, which passes it to updated add_to_linkgrabber
+                await process_jd_links(client, user_id, callback_query.message, [url], deep_scan=True)
                 
             except Exception as e:
                 logger.error(f"Deep scan error: {e}")
