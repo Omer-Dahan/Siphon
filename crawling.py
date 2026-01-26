@@ -43,8 +43,8 @@ def get_deep_links(url: str) -> list:
             if parsed.scheme not in ('http', 'https'):
                 continue
                 
-            # 2. Skip common junk
-            if any(x in full_url.lower() for x in ['javascript:', 'mailto:', '#', 'login', 'register']):
+            # 2. Skip common junk and non-content pages
+            if any(x in full_url.lower() for x in ['javascript:', 'mailto:', '#', 'login', 'register', '/tags/', '/categories/', '/search/']):
                 continue
 
             found_links.add(full_url)

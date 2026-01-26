@@ -2,7 +2,7 @@ import os
 import asyncio
 import logging
 from pyrogram import Client, filters, enums
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
 from dotenv import load_dotenv
 from utils import moon_progress_bar, get_video_metadata, generate_thumbnail, split_video
 import threading
@@ -288,6 +288,63 @@ async def upload_progress_hook(current, total, filename, user_id):
         user_sessions[user_id].active_uploads[filename] = percent
 
 
+async def send_album_to_telegram(client, user_id: int, image_batch: list, state: SessionState):
+    """
+    Send a batch of images as an album.
+    image_batch: List of dicts {'path': str, 'uuid': str, 'name': str}
+    """
+    if not image_batch:
+        return
+
+    # Chunk into groups of 10 (Telegram Limit)
+    chunks = [image_batch[i:i + 10] for i in range(0, len(image_batch), 10)]
+    
+    jd = None
+    if JD_AVAILABLE:
+        try:
+            jd = get_jd_client()
+        except:
+            pass
+
+    for chunk in chunks:
+        media_group = []
+        paths_to_clean = []
+        uuids_to_remove = []
+        
+        for item in chunk:
+            path = item['path']
+            # Shorten caption to avoid clutter, or just filename
+            caption = f"🖼️ {item['name']}"
+            media_group.append(InputMediaPhoto(path, caption=caption))
+            paths_to_clean.append(path)
+            if item.get('uuid'):
+                uuids_to_remove.append(item['uuid'])
+        
+        try:
+            # logger.info(f"📤 Sending album with {len(media_group)} photos...")
+            await client.send_media_group(chat_id=user_id, media=media_group)
+            
+            # Cleanup
+            for path in paths_to_clean:
+                if os.path.exists(path):
+                    try:
+                        os.remove(path)
+                    except Exception as e:
+                        logger.error(f"Failed to delete {path}: {e}")
+            
+            if jd and uuids_to_remove:
+                loop = asyncio.get_event_loop()
+                # Remove from JD
+                await loop.run_in_executor(executor, jd.remove_links, uuids_to_remove)
+            
+            # Mark as completed
+            for item in chunk:
+                state.completed_tasks.append(item['name'])
+                
+        except Exception as e:
+            logger.error(f"Failed to send album: {e}")
+            # Try individual fallback? for now just log
+            
 async def monitor_jd_downloads(client, user_id: int, status_msg, expected_uuids: list):
     """
     Monitor JDownloader and update shared session state.
@@ -308,6 +365,12 @@ async def monitor_jd_downloads(client, user_id: int, status_msg, expected_uuids:
     max_wait = 7200 # 2 hours
     elapsed = 0
     
+    # Album Buffering
+    image_buffer = []  # [{'path':p, 'uuid':u, 'name':n, 'time':t}]
+    last_image_time = 0
+    image_exts = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif']
+    video_exts = ['.mp4', '.mkv', '.webm', '.avi', '.mov', '.ts', '.m4v', '.wmv', '.flv']
+    
     # Start the UI loop
     asyncio.create_task(dashboard_loop(client, user_id, status_msg, state))
     
@@ -322,10 +385,6 @@ async def monitor_jd_downloads(client, user_id: int, status_msg, expected_uuids:
             # Filter relevant (Strict Privacy: Only track UUIDs we expect)
             relevant = [d for d in downloads if d.get("uuid") in expected_uuids]
             
-            if not relevant and elapsed > 30 and not state.completed_tasks:
-                 # Nothing found yet?
-                 pass
-            
             # Update State
             state.jd_downloads = relevant
             state.total_speed = sum(d.get("speed", 0) for d in relevant)
@@ -335,22 +394,54 @@ async def monitor_jd_downloads(client, user_id: int, status_msg, expected_uuids:
                 if dl.get("finished"):
                     # Use package save location if available
                     local_path = dl.get("local_path")
+                    uuid = dl.get("uuid")
                     
                     if local_path and local_path not in uploaded_files and os.path.exists(local_path):
+                        # Determine File Type
                         uploaded_files.add(local_path)
-                        # Trigger upload
-                        asyncio.create_task(upload_jd_file_to_telegram(client, user_id, local_path, state, dl.get("uuid")))
+                        filename = os.path.basename(local_path)
+                        ext = os.path.splitext(filename)[1].lower()
+                        
+                        if ext in image_exts:
+                            # Add to buffer
+                            image_buffer.append({
+                                'path': local_path,
+                                'uuid': uuid,
+                                'name': filename,
+                                'time': time.time()
+                            })
+                            last_image_time = time.time()
+                            logger.info(f"Buffered image: {filename} (Buffer: {len(image_buffer)})")
+                        else:
+                            # Video/Doc -> Upload immediately
+                            asyncio.create_task(upload_jd_file_to_telegram(client, user_id, local_path, state, uuid))
+            
+            # --- Process Album Buffer ---
+            current_time = time.time()
+            # Flush if >= 10 OR (not empty AND idle for > 5s)
+            if len(image_buffer) >= 10 or (len(image_buffer) > 0 and current_time - last_image_time > 5):
+                batch = image_buffer[:]
+                image_buffer = [] # clear immediately
+                asyncio.create_task(send_album_to_telegram(client, user_id, batch, state))
             
             # Check if all JD tasks are done
             all_jd_finished = relevant and all(d.get("finished") for d in relevant)
-            if all_jd_finished and len(uploaded_files) >= len(relevant):
-                # We don't break immediately, we wait for uploads to finish in the checking loop
-                state.is_active = False # Signal dashboard we are effectively done with JD
+            
+            # We are done if all JD tasks are finished AND all local files are handled (uploaded or buffered)
+            # Wait for buffer to be empty too
+            if all_jd_finished and len(uploaded_files) >= len(relevant) and not image_buffer:
+                # Wait for uploads to finish is tricky without tighter tracking, 
+                # but basically we stop monitoring JD.
+                state.is_active = False 
                 break
                 
         except Exception as e:
             logger.error(f"Monitor error: {e}")
             await asyncio.sleep(5)
+            
+    # Final Flush of buffer if any (just in case)
+    if image_buffer:
+        await send_album_to_telegram(client, user_id, image_buffer, state)
 
 
 async def upload_jd_file_to_telegram(client, user_id: int, file_path: str, state: SessionState, uuid: str = None):

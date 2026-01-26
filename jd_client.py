@@ -104,6 +104,9 @@ class JDownloaderClient:
         try:
             start_time = time.time()
             links = []
+            last_count = -1
+            stable_count_duration = 0
+            STABILITY_THRESHOLD = 3  # Seconds to wait for count to stop changing
             
             while True:
                 # Query LinkGrabber for packages and links
