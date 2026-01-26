@@ -8,6 +8,7 @@ import logging
 import time
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
+from utils import format_size
 
 try:
     import myjdapi
@@ -123,7 +124,7 @@ class JDownloaderClient:
                             "name": link.get("name", "Unknown"),
                             "url": link.get("url", ""),
                             "size": link.get("bytesTotal", 0),
-                            "size_str": self._format_size(link.get("bytesTotal", 0)),
+                            "size_str": format_size(link.get("bytesTotal", 0)),
                             "enabled": link.get("enabled", True),
                             "package_uuid": pkg.get("uuid"),
                             "availability": link.get("availability", "UNKNOWN")
@@ -304,16 +305,7 @@ class JDownloaderClient:
             logger.error(f"❌ Failed to remove links: {e}")
             return False
     
-    @staticmethod
-    def _format_size(size_bytes: int) -> str:
-        """Format bytes to human readable string."""
-        if size_bytes <= 0:
-            return "Unknown"
-        for unit in ['B', 'KB', 'MB', 'GB']:
-            if size_bytes < 1024:
-                return f"{size_bytes:.2f} {unit}"
-            size_bytes /= 1024
-        return f"{size_bytes:.2f} TB"
+
 
 
 # Singleton instance
