@@ -1,60 +1,197 @@
-# 🎬 Siphon - Video Scraper & Telegram Bot
+# 🎬 Siphon - JDownloader 2 Telegram Bot
 
-סולס (Siphon) הוא סקריפט עוצמתי (מבוסס Playwright) לחילוץ קישורי וידאו ישירים מאתרים, עם ממשק טלגרם נוח.
+<div align="center">
 
-## 📋 תכונות
+![Version](https://img.shields.io/badge/version-2.0-blue?style=for-the-badge)
+![Python](https://img.shields.io/badge/python-3.8+-green?style=for-the-badge&logo=python)
+![Telegram](https://img.shields.io/badge/Telegram-Bot-blue?style=for-the-badge&logo=telegram)
+![JDownloader](https://img.shields.io/badge/JDownloader-2-orange?style=for-the-badge)
 
-- ✅ **Sniffing חכם**: האזנה לתעבורת הרשת בדומה ל-IDM.
-- ✅ **ממשק טלגרם**: שליטה נוחה דרך בוט עם שני מצבים.
-- ✅ **Single Download**: הורדה ישירה של הוידאו מהלינק ששלחת.
-- ✅ **Full Page Scrape**: סריקת עמוד שלם וכל תתי-הלינקים שלו וייצוא ל-CSV.
-- ✅ **תמיכה רחבה**: MP4, WebM, MOV, AVI, MKV, M3U8.
-- ✅ **סינון חכם**: סינון לפי מילות מפתח (אופציונלי).
+**בוט טלגרם חכם להורדת וידאו דרך JDownloader 2 עם העלאה אוטומטית לטלגרם**
+
+</div>
+
+---
+
+## ✨ תכונות עיקריות
+
+| תכונה | תיאור |
+|--------|--------|
+| 🔗 **אינטגרציה עם JDownloader 2** | שליטה מלאה על JD2 דרך My.JDownloader API |
+| 🚀 **סריקה רגילה ועמוקה** | Deep-Decrypt לחילוץ לינקים מוסתרים |
+| 📊 **דשבורד התקדמות** | מעקב בזמן אמת עם סרגל ירח מונפש |
+| 📤 **העלאה אוטומטית** | העלאה ישירה לטלגרם עם תמיכה בסטרימינג |
+| 🔪 **פיצול קבצים גדולים** | פיצול אוטומטי לקבצים מעל 2GB |
+| 🔄 **המרה ל-MP4** | המרה אוטומטית לפורמט תואם סטרימינג |
+| 🖼️ **תמיכה באלבומי תמונות** | שליחת תמונות כאלבום (עד 10 בכל פעם) |
+| 🔒 **הרשאות משתמשים** | מנהלים ומשתמשים מורשים בלבד |
+
+---
+
+## 🛠️ דרישות מערכת
+
+- **Python 3.8+**
+- **JDownloader 2** עם חשבון [My.JDownloader](https://my.jdownloader.org/)
+- **FFmpeg** מותקן ונגיש ב-PATH
+- חשבון Telegram API
+
+---
 
 ## 🚀 התקנה
 
-1. התקן את התלויות:
+### 1. שכפל את הפרויקט
+```bash
+git clone https://github.com/your-username/siphon.git
+cd siphon
+```
+
+### 2. צור סביבה וירטואלית
+```bash
+python -m venv venv
+venv\Scripts\activate  # Windows
+# או
+source venv/bin/activate  # Linux/Mac
+```
+
+### 3. התקן תלויות
 ```bash
 pip install -r requirements.txt
 ```
 
-2. התקן את הדפדפנים של Playwright:
-```bash
-playwright install chromium
-```
-
-## ⚙️ הגדרת הבוט (Telegram)
-
-1. צור בוט דרך [@BotFather](https://t.me/BotFather) וקבל Token.
-2. השג `API_ID` ו-`API_HASH` מ-[my.telegram.org](https://my.telegram.org).
-3. ערוך את קובץ `.env` והכנס את הפרטים:
+### 4. הגדר את קובץ `.env`
+צור קובץ `.env` בתיקייה הראשית:
 ```env
-BOT_TOKEN=your_token_here
+# Telegram
+BOT_TOKEN=your_bot_token
 API_ID=your_api_id
 API_HASH=your_api_hash
-ADMIN_IDS=123456789,987654321  # ליסט של מנהלים
-USER_IDS=111111111             # ליסט של משתמשים מורשים
+ADMIN_IDS=123456789
+USER_IDS=111111111,222222222
+
+# JDownloader 2
+JD_EMAIL=your_myjdownloader_email
+JD_PASSWORD=your_myjdownloader_password
+JD_DEVICE_NAME=your_device_name
+JD_DOWNLOAD_DIR=C:\Users\you\Downloads\JD
 ```
 
-## 🤖 שימוש בבוט
+---
 
-1. הרץ את הבוט:
-```bash
-run_bot.bat
-```
-או:
+## ⚙️ הגדרת JDownloader 2
+
+1. **הורד והתקן** [JDownloader 2](https://jdownloader.org/jdownloader2)
+2. **צור חשבון** ב-[My.JDownloader](https://my.jdownloader.org/)
+3. **התחבר** ב-JD2: `Settings → My.JDownloader`
+4. **שים לב לשם המכשיר** (Device Name) - זה מה שתכניס ב-`JD_DEVICE_NAME`
+
+---
+
+## 🤖 שימוש
+
+### הפעלת הבוט
 ```bash
 python bot.py
 ```
+או:
+```bash
+run_bot.bat
+```
 
-2. בטלגרם, לחץ על `/start` ובחר את המצב הרצוי:
-   - **📥 Single Download**: שלח לינק לעמוד עם וידאו, והבוט ישלח לך את הקובץ.
-   - **📂 Full Page Scrape**: שלח לינק לעמוד ראשי, והבוט יסרוק את כל האתר וישלח קובץ CSV עם כל הלינקים שנמצאו.
+### פקודות זמינות
 
-## 📊 פורמט הפלט (במצב Full Scrape)
+| פקודה | תיאור |
+|--------|--------|
+| `/start` | התחלה והצגת הודעת ברוכים הבאים |
 
-קובץ CSV עם העמודות הבאות:
-- **title**: כותרת הסרטון
-- **url**: קישור ישיר להורדה
-- **size**: גודל הקובץ (MB)
-- **page_url**: קישור לעמוד המקורי
+### תהליך העבודה
+
+```mermaid
+graph LR
+    A[📎 שלח לינק] --> B{בחר סוג סריקה}
+    B -->|🚀 רגילה| C[סריקה מהירה]
+    B -->|🕷️ עמוקה| D[Deep-Decrypt]
+    C --> E[📋 בחר קבצים]
+    D --> E
+    E --> F[⬇️ הורדה ב-JD2]
+    F --> G[📤 העלאה לטלגרם]
+```
+
+1. **שלח לינק** → הבוט מזהה אוטומטית
+2. **בחר סוג סריקה** → רגילה (מהיר) או עמוקה (מקיף)
+3. **בחר קבצים** → ממשק אינטראקטיבי עם Toggle
+4. **לחץ Download** → JD2 מוריד, הבוט מעלה לטלגרם
+
+---
+
+## 📁 מבנה הפרויקט
+
+```
+Siphon/
+├── 📄 bot.py           # הבוט הראשי + ממשק טלגרם
+├── 📄 jd_client.py     # עטיפה ל-JDownloader API
+├── 📄 utils.py         # פונקציות עזר (FFmpeg, פורמטים)
+├── 📄 requirements.txt # תלויות Python
+├── 📄 run_bot.bat      # סקריפט הרצה (Windows)
+├── 📄 .env             # הגדרות סביבה (לא ב-Git)
+└── 📄 README.md        # אתה כאן! 👋
+```
+
+---
+
+## 🎨 תכונות ממשק
+
+### 🌙 סרגל התקדמות ירח
+```
+🌕🌕🌕🌕🌖🌑🌑🌑🌑🌑 45%
+```
+
+### 📊 דשבורד הורדה
+```
+📥 מוריד... (סה"כ)
+━━━━━━━━━━━━━━━━━━
+🌕🌕🌕🌕🌖🌑🌑🌑🌑🌑 45.2%
+📊 4.0GB/8.9GB
+📥 קובץ נוכחי: video_file.mp4
+⚡ מהירות: 15.3MB/s
+⏱️ זמן משוער: 05:23
+🗂 קבצים: 2/5
+━━━━━━━━━━━━━━━━━━
+```
+
+---
+
+## 📦 תלויות
+
+| חבילה | תיאור |
+|--------|--------|
+| `pyrogram` | Telegram Client API |
+| `myjdapi` | JDownloader 2 API |
+| `ffmpeg-python` | עטיפה ל-FFmpeg |
+| `python-dotenv` | טעינת משתני סביבה |
+
+---
+
+## ⚠️ הערות חשובות
+
+> [!IMPORTANT]
+> **JDownloader 2 חייב לרוץ ברקע** כדי שהבוט יעבוד!
+
+> [!TIP]
+> השתמש בסריקה עמוקה (Deep) לאתרים עם הגנות או לינקים מוסתרים.
+
+> [!NOTE]
+> קבצים מעל 2GB יפוצלו אוטומטית לחלקים.
+
+---
+
+## 📜 רישיון
+
+MIT License - ראה [LICENSE](LICENSE) לפרטים.
+
+---
+
+<div align="center">
+
+**Made with ❤️ by Omer**
+
+</div>
