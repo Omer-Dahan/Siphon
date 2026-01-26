@@ -67,7 +67,7 @@ class JDownloaderClient:
             return self.connect()
         return True
     
-    def add_to_linkgrabber(self, url: str, package_name: str = None) -> bool:
+    def add_to_linkgrabber(self, url: str, package_name: str = None, deep_scan: bool = False) -> bool:
         """
         Add a URL to LinkGrabber for extraction.
         Returns True if successfully added.
@@ -76,7 +76,7 @@ class JDownloaderClient:
             return False
         
         try:
-            logger.info(f"📥 Adding to LinkGrabber: {url[:50]}...")
+            logger.info(f"📥 Adding to LinkGrabber: {url[:50]}... (Deep: {deep_scan})")
             self.device.linkgrabber.add_links([{
                 "autostart": False,
                 "links": url,
@@ -85,7 +85,8 @@ class JDownloaderClient:
                 "priority": "DEFAULT",
                 "downloadPassword": None,
                 "destinationFolder": self.download_dir,
-                "overwritePackagizerRules": True
+                "overwritePackagizerRules": True,
+                "deepDecrypt": deep_scan
             }])
             logger.info("✅ Link added to LinkGrabber")
             return True
