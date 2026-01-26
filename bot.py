@@ -1,11 +1,12 @@
 import os
+import time
 import asyncio
 import logging
-from pyrogram import Client, filters, enums
+from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
 from dotenv import load_dotenv
-from utils import moon_progress_bar, get_video_metadata, generate_thumbnail, split_video
-import threading
+from utils import moon_progress_bar, get_video_metadata, generate_thumbnail, split_video, convert_to_mp4, format_size
+
 from concurrent.futures import ThreadPoolExecutor
 
 # JDownloader 2 Integration
@@ -71,15 +72,7 @@ def shorten_name(name: str, max_len: int = 25) -> str:
         return name
     return name[:max_len-3] + "..."
 
-def format_size(size_bytes: int) -> str:
-    """Format bytes to human readable string."""
-    if size_bytes <= 0:
-        return "?"
-    for unit in ['B', 'KB', 'MB', 'GB']:
-        if size_bytes < 1024:
-            return f"{size_bytes:.1f}{unit}"
-        size_bytes /= 1024
-    return f"{size_bytes:.1f}TB"
+
 
 def format_jd_list_message(links: list, page: int = 0) -> str:
     """Format the JD2 LinkGrabber results as a message header."""
@@ -369,7 +362,7 @@ async def monitor_jd_downloads(client, user_id: int, status_msg, expected_uuids:
     image_buffer = []  # [{'path':p, 'uuid':u, 'name':n, 'time':t}]
     last_image_time = 0
     image_exts = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif']
-    video_exts = ['.mp4', '.mkv', '.webm', '.avi', '.mov', '.ts', '.m4v', '.wmv', '.flv']
+    # video_exts used global VIDEO_EXTENSIONS
     
     # Start the UI loop
     asyncio.create_task(dashboard_loop(client, user_id, status_msg, state))
@@ -455,8 +448,24 @@ async def upload_jd_file_to_telegram(client, user_id: int, file_path: str, state
     state.active_uploads[filename] = 0.0
     
     try:
+        # 0. Convert to MP4 (Streaming-friendly) if needed
+        loop = asyncio.get_event_loop()
+        
+        # Check if conversion needed first to avoid unnecessary executor spawn if possible, 
+        # but convert_to_mp4 handles checks efficiently too. 
+        # For thread safety and non-blocking, we run it in executor.
+        new_path = await loop.run_in_executor(None, convert_to_mp4, file_path)
+        
+        if new_path != file_path:
+            # Update filename tracking if changed
+            state.active_uploads.pop(filename, None)
+            file_path = new_path
+            filename = os.path.basename(file_path)
+            state.active_uploads[filename] = 0.0
+            
         # 1. Handle Large Files (Split if needed)
-        files_to_upload = split_video(file_path, TG_MAX_SIZE)
+        # We also run split in executor to prevent blocking
+        files_to_upload = await loop.run_in_executor(None, split_video, file_path, TG_MAX_SIZE)
         
         if not files_to_upload:
             logger.error(f"Failed to process/split file: {file_path}")
@@ -483,10 +492,9 @@ async def upload_jd_file_to_telegram(client, user_id: int, file_path: str, state
             
             # Upload Logic
             ext = os.path.splitext(part_name)[1].lower()
-            video_exts = ['.mp4', '.mkv', '.webm', '.avi', '.mov', '.ts', '.m4v', '.wmv', '.flv', '.wmv', '.flv']
             
             try:
-                if ext in video_exts:
+                if ext in VIDEO_EXTENSIONS:
                     meta = get_video_metadata(part_path)
                     thumb = generate_thumbnail(part_path)
                     
@@ -499,9 +507,9 @@ async def upload_jd_file_to_telegram(client, user_id: int, file_path: str, state
                         video=part_path,
                         caption=caption,
                         duration=meta.get('duration', 0),
-                        width=meta.get('width', 0),
                         height=meta.get('height', 0),
                         thumb=thumb,
+                        supports_streaming=True,
                         progress=_progress
                     )
                     
@@ -608,6 +616,9 @@ async def handle_message(client, message):
             await message.reply_text("❌ Please send a valid URL starting with http or https.")
 
 
+# File Extensions
+VIDEO_EXTENSIONS = {'.mp4', '.mkv', '.webm', '.avi', '.mov', '.ts', '.m4v', '.wmv', '.flv', '.3gp', '.mpg', '.mpeg'}
+
 async def process_jd_links(client, user_id, message_to_edit, urls):
     """Helper to process a list of URLs with JD2."""
     try:
@@ -618,10 +629,6 @@ async def process_jd_links(client, user_id, message_to_edit, urls):
         await loop.run_in_executor(executor, jd.clear_linkgrabber)
         
         # 2. Add Links to LinkGrabber
-        # Improve: add_links supports string or list? The wrapper we made supports string.
-        # We will loop if needed or join. JD API often takes newline sep string.
-        # Let's use our wrapper loop for safety or modify wrapper. 
-        # For now, let's just loop add (sequentially might be slow but safe) or join with \n
         combined_links = "\n".join(urls)
         success = await loop.run_in_executor(executor, jd.add_to_linkgrabber, combined_links)
         
@@ -638,16 +645,30 @@ async def process_jd_links(client, user_id, message_to_edit, urls):
             await message_to_edit.edit_text("❌ לא נמצאו קבצים להורדה.")
             return
         
-        # 4. Filter duplicates and initialize toggle state
+        # 4. Filter duplicates AND Valid Video Files
         unique_links = []
         seen_uuids = set()
         new_toggle_state = {}
         
+
         for link in links:
+            # Check extension
+            name = link.get("name", "").lower()
+            ext = os.path.splitext(name)[1]
+            
+            if ext not in VIDEO_EXTENSIONS:
+                continue
+                
             if link['uuid'] not in seen_uuids:
                 unique_links.append(link)
                 seen_uuids.add(link['uuid'])
                 new_toggle_state[link['uuid']] = True
+        
+        # If no videos found after filtering
+        if not unique_links:
+            await message_to_edit.edit_text("❌ לא נמצאו קבצי וידאו בקישורים אלו.")
+            return
+
         
         # Store in cache
         jd_linkgrabber_cache[user_id] = unique_links

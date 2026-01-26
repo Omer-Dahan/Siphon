@@ -5,6 +5,19 @@ import math
 
 logger = logging.getLogger(__name__)
 
+
+def format_size(size_bytes: int) -> str:
+    """Format bytes to human readable string."""
+    if size_bytes < 0:
+        return "Unknown"
+    if size_bytes == 0:
+        return "0 B"
+    for unit in ['B', 'KB', 'MB', 'GB']:
+        if size_bytes < 1024:
+            return f"{size_bytes:.2f} {unit}"
+        size_bytes /= 1024
+    return f"{size_bytes:.2f} TB"
+
 def moon_progress_bar(percent: float, total_cells: int = 10) -> str:
     """
     Build a moon phase progress bar (LTR).
@@ -81,6 +94,136 @@ def generate_thumbnail(path: str):
     except Exception as e:
         logger.error(f"Error generating thumbnail for {path}: {e}")
     return None
+
+# Formats that support Telegram streaming
+STREAMING_FORMATS = ['.mp4', '.m4v', '.mov']
+# Codecs compatible with Telegram streaming
+STREAMING_VIDEO_CODECS = ['h264', 'mpeg4', 'avc']
+STREAMING_AUDIO_CODECS = ['aac', 'mp3']
+
+def needs_conversion(file_path: str) -> bool:
+    """
+    Check if a video file needs conversion for Telegram streaming.
+    Returns True if conversion is needed.
+    """
+    ext = os.path.splitext(file_path)[1].lower()
+    
+    # If format doesn't support streaming, needs conversion
+    if ext not in STREAMING_FORMATS:
+        return True
+    
+    # Check codecs
+    try:
+        probe = ffmpeg.probe(file_path)
+        video_stream = next((s for s in probe['streams'] if s['codec_type'] == 'video'), None)
+        audio_stream = next((s for s in probe['streams'] if s['codec_type'] == 'audio'), None)
+        
+        if video_stream:
+            video_codec = video_stream.get('codec_name', '').lower()
+            if video_codec not in STREAMING_VIDEO_CODECS:
+                return True
+        
+        if audio_stream:
+            audio_codec = audio_stream.get('codec_name', '').lower()
+            if audio_codec not in STREAMING_AUDIO_CODECS:
+                return True
+                
+        return False
+    except Exception as e:
+        logger.warning(f"Could not probe {file_path}, assuming conversion needed: {e}")
+        return True
+
+def convert_to_mp4(file_path: str, delete_original: bool = True) -> str:
+    """
+    Convert a video file to MP4 (H.264 + AAC) for Telegram streaming.
+    
+    Uses fast re-mux if codecs are already compatible, otherwise re-encodes.
+    Returns the path to the converted file, or original if no conversion needed.
+    """
+    if not os.path.exists(file_path):
+        logger.error(f"File not found for conversion: {file_path}")
+        return file_path
+    
+    ext = os.path.splitext(file_path)[1].lower()
+    
+    # Already MP4 with correct codecs? Skip
+    if ext == '.mp4' and not needs_conversion(file_path):
+        logger.info(f"✅ {os.path.basename(file_path)} already streaming-compatible, skipping conversion")
+        return file_path
+    
+    # Generate output path
+    base_name = os.path.splitext(file_path)[0]
+    output_path = f"{base_name}_converted.mp4"
+    
+    try:
+        # Probe to check codecs
+        probe = ffmpeg.probe(file_path)
+        video_stream = next((s for s in probe['streams'] if s['codec_type'] == 'video'), None)
+        audio_stream = next((s for s in probe['streams'] if s['codec_type'] == 'audio'), None)
+        
+        video_codec = video_stream.get('codec_name', '').lower() if video_stream else ''
+        audio_codec = audio_stream.get('codec_name', '').lower() if audio_stream else ''
+        
+        # Decide encoding strategy
+        can_copy_video = video_codec in STREAMING_VIDEO_CODECS
+        can_copy_audio = audio_codec in STREAMING_AUDIO_CODECS or not audio_stream
+        
+        logger.info(f"🔄 Converting {os.path.basename(file_path)} to MP4...")
+        logger.info(f"   Video: {video_codec} -> {'copy' if can_copy_video else 'h264'}")
+        logger.info(f"   Audio: {audio_codec} -> {'copy' if can_copy_audio else 'aac'}")
+        
+        # Build ffmpeg command
+        input_stream = ffmpeg.input(file_path)
+        
+        output_args = {
+            'format': 'mp4',
+            'movflags': '+faststart',  # Important for streaming!
+        }
+        
+        if can_copy_video:
+            output_args['vcodec'] = 'copy'
+        else:
+            output_args['vcodec'] = 'libx264'
+            output_args['preset'] = 'fast'
+            output_args['crf'] = '23'
+        
+        if can_copy_audio:
+            output_args['acodec'] = 'copy'
+        else:
+            output_args['acodec'] = 'aac'
+            output_args['audio_bitrate'] = '192k'
+        
+        # Run conversion
+        (
+            ffmpeg
+            .output(input_stream, output_path, **output_args)
+            .overwrite_output()
+            .run(capture_stdout=True, capture_stderr=True)
+        )
+        
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            logger.info(f"✅ Conversion complete: {os.path.basename(output_path)}")
+            
+            # Delete original if requested
+            if delete_original and file_path != output_path:
+                try:
+                    os.remove(file_path)
+                    logger.info(f"🗑️ Deleted original: {os.path.basename(file_path)}")
+                except Exception as e:
+                    logger.warning(f"Could not delete original: {e}")
+            
+            return output_path
+        else:
+            logger.error(f"Conversion failed - output file empty or missing")
+            return file_path
+            
+    except ffmpeg.Error as e:
+        stderr = e.stderr.decode() if e.stderr else str(e)
+        logger.error(f"❌ FFmpeg conversion error: {stderr[:500]}")
+        return file_path
+    except Exception as e:
+        logger.error(f"❌ Conversion error for {file_path}: {e}")
+        return file_path
 
 def split_video(file_path: str, max_size_bytes: int = 2 * 1024 * 1024 * 1024) -> list:
     """
