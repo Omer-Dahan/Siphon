@@ -118,8 +118,9 @@ def get_jd_toggle_keyboard(user_id: int, links: list, page: int = 0) -> InlineKe
     if nav_row:
         buttons.append(nav_row)
     
-    # Action buttons
-    selected_count = sum(1 for v in toggle_states.values() if v)
+    # Action buttons - count only selected items that are in current links cache
+    link_uuids = {link.get("uuid") for link in links}
+    selected_count = sum(1 for uuid, v in toggle_states.items() if v and uuid in link_uuids)
     buttons.append([InlineKeyboardButton(f"🚀 Download Selected ({selected_count})", callback_data="jd_confirm")])
     buttons.append([
         InlineKeyboardButton("✅ Select All", callback_data="jd_select_all"),
@@ -165,7 +166,7 @@ def render_dashboard(state: SessionState) -> str:
         # We don't have speed/eta for uploads in current state dict, only percent.
         # We will render what we have.
         return (
-            f"� מעלה לטלגרם...\n"
+            f"📤 מעלה לטלגרם...\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"{bar} `{percent:.1f}%`\n"
             f"📄 קובץ: `{filename}`\n"
@@ -486,9 +487,12 @@ async def upload_jd_file_to_telegram(client, user_id: int, file_path: str, state
             else:
                 current_tracking_name = filename
 
-            # Define progress callback wrapper
-            async def _progress(current, total):
-                await upload_progress_hook(current, total, current_tracking_name, user_id)
+            # Define progress callback wrapper with closure fix
+            def make_progress_callback(tracking_name, uid):
+                async def _progress(current, total):
+                    await upload_progress_hook(current, total, tracking_name, uid)
+                return _progress
+            _progress = make_progress_callback(current_tracking_name, user_id)
             
             # Upload Logic
             ext = os.path.splitext(part_name)[1].lower()
@@ -643,7 +647,13 @@ async def process_jd_links(client, user_id, message_to_edit, urls, deep_scan=Fal
         links = await loop.run_in_executor(executor, jd.get_linkgrabber_links, True, 45)
         
         if not links:
-            await message_to_edit.edit_text("❌ לא נמצאו קבצים להורדה.")
+            await message_to_edit.edit_text(
+                "❌ לא נמצאו קבצים להורדה.\nייתכן שהסריקה עדיין נמשכת, נסה לרענן.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔄 רענון נתוני סריקה", callback_data="jd_refresh")],
+                    [InlineKeyboardButton("🗑️ ביטול", callback_data="scan_cancel")]
+                ])
+            )
             return
         
         # 4. Filter duplicates AND Valid Video Files
@@ -667,7 +677,13 @@ async def process_jd_links(client, user_id, message_to_edit, urls, deep_scan=Fal
         
         # If no videos found after filtering
         if not unique_links:
-            await message_to_edit.edit_text("❌ לא נמצאו קבצי וידאו בקישורים אלו.")
+            await message_to_edit.edit_text(
+                "❌ לא נמצאו קבצי וידאו בקישורים אלו.\nייתכן שהוספת סוג קובץ שאינו וידאו או שהסריקה טרם הסתיימה.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔄 רענון נתוני סריקה", callback_data="jd_refresh")],
+                    [InlineKeyboardButton("🗑️ ביטול", callback_data="scan_cancel")]
+                ])
+            )
             return
 
         
@@ -698,6 +714,13 @@ async def handle_callbacks(client, callback_query):
     # --- Scan Selection Handlers ---
     if data == "scan_cancel":
         pending_urls.pop(user_id, None)
+        if JD_AVAILABLE:
+            try:
+                jd = get_jd_client()
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(executor, jd.clear_linkgrabber)
+            except Exception as e:
+                logger.warning(f"Failed to clear JD2 LinkGrabber in scan_cancel: {e}")
         await callback_query.message.edit_text("❌ בוטל.")
         return
 
@@ -805,6 +828,13 @@ async def handle_callbacks(client, callback_query):
                 new_toggle_state = {}
 
                 for link in links:
+                    # Check extension (Fix for zombie files showing up on refresh)
+                    name = link.get("name", "").lower()
+                    ext = os.path.splitext(name)[1]
+                    
+                    if ext not in VIDEO_EXTENSIONS:
+                        continue
+                        
                     if link['uuid'] not in seen_uuids:
                         unique_links.append(link)
                         seen_uuids.add(link['uuid'])
@@ -814,6 +844,17 @@ async def handle_callbacks(client, callback_query):
                             new_toggle_state[link['uuid']] = current_toggles[link['uuid']]
                         else:
                             new_toggle_state[link['uuid']] = True
+                
+                # Check if we have anything legit left
+                if not unique_links:
+                    await callback_query.edit_message_text(
+                        "❌ לא נמצאו קבצי וידאו.\nייתכן שהסריקה עדיין נמשכת, נסה לרענן שוב.",
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton("🔄 רענון נתוני סריקה", callback_data="jd_refresh")],
+                            [InlineKeyboardButton("🗑️ ביטול", callback_data="scan_cancel")]
+                        ])
+                    )
+                    return
                 
                 jd_linkgrabber_cache[user_id] = unique_links
                 jd_toggle_states[user_id] = new_toggle_state
