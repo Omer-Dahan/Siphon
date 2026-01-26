@@ -7,59 +7,59 @@
 ![Telegram](https://img.shields.io/badge/Telegram-Bot-blue?style=for-the-badge&logo=telegram)
 ![JDownloader](https://img.shields.io/badge/JDownloader-2-orange?style=for-the-badge)
 
-**בוט טלגרם חכם להורדת וידאו דרך JDownloader 2 עם העלאה אוטומטית לטלגרם**
+**Smart Telegram bot for video downloading via JDownloader 2 with automatic upload to Telegram**
 
 </div>
 
 ---
 
-## ✨ תכונות עיקריות
+## ✨ Key Features
 
-| תכונה | תיאור |
-|--------|--------|
-| 🔗 **אינטגרציה עם JDownloader 2** | שליטה מלאה על JD2 דרך My.JDownloader API |
-| 🚀 **סריקה רגילה ועמוקה** | Deep-Decrypt לחילוץ לינקים מוסתרים |
-| 📊 **דשבורד התקדמות** | מעקב בזמן אמת עם סרגל ירח מונפש |
-| 📤 **העלאה אוטומטית** | העלאה ישירה לטלגרם עם תמיכה בסטרימינג |
-| 🔪 **פיצול קבצים גדולים** | פיצול אוטומטי לקבצים מעל 2GB |
-| 🔄 **המרה ל-MP4** | המרה אוטומטית לפורמט תואם סטרימינג |
-| 🖼️ **תמיכה באלבומי תמונות** | שליחת תמונות כאלבום (עד 10 בכל פעם) |
-| 🔒 **הרשאות משתמשים** | מנהלים ומשתמשים מורשים בלבד |
+| Feature | Description |
+|---------|-------------|
+| 🔗 **JDownloader 2 Integration** | Full control over JD2 via My.JDownloader API |
+| 🚀 **Regular & Deep Scanning** | Deep-Decrypt for extracting hidden links |
+| 📊 **Progress Dashboard** | Real-time tracking with animated moon progress bar |
+| 📤 **Automatic Upload** | Direct upload to Telegram with streaming support |
+| 🔪 **Large File Splitting** | Automatic splitting for files over 2GB |
+| 🔄 **MP4 Conversion** | Automatic conversion to streaming-compatible format |
+| 🖼️ **Photo Album Support** | Send photos as albums (up to 10 at a time) |
+| 🔒 **User Permissions** | Admins and authorized users only |
 
 ---
 
-## 🛠️ דרישות מערכת
+## 🛠️ System Requirements
 
 - **Python 3.8+**
-- **JDownloader 2** עם חשבון [My.JDownloader](https://my.jdownloader.org/)
-- **FFmpeg** מותקן ונגיש ב-PATH
-- חשבון Telegram API
+- **JDownloader 2** with a [My.JDownloader](https://my.jdownloader.org/) account
+- **FFmpeg** installed and accessible in PATH
+- Telegram API account
 
 ---
 
-## 🚀 התקנה
+## 🚀 Installation
 
-### 1. שכפל את הפרויקט
+### 1. Clone the project
 ```bash
 git clone https://github.com/your-username/siphon.git
 cd siphon
 ```
 
-### 2. צור סביבה וירטואלית
+### 2. Create a virtual environment
 ```bash
 python -m venv venv
 venv\Scripts\activate  # Windows
-# או
+# or
 source venv/bin/activate  # Linux/Mac
 ```
 
-### 3. התקן תלויות
+### 3. Install dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. הגדר את קובץ `.env`
-צור קובץ `.env` בתיקייה הראשית:
+### 4. Configure the `.env` file
+Create a `.env` file in the root directory:
 ```env
 # Telegram
 BOT_TOKEN=your_bot_token
@@ -77,116 +77,116 @@ JD_DOWNLOAD_DIR=C:\Users\you\Downloads\JD
 
 ---
 
-## ⚙️ הגדרת JDownloader 2
+## ⚙️ JDownloader 2 Setup
 
-1. **הורד והתקן** [JDownloader 2](https://jdownloader.org/jdownloader2)
-2. **צור חשבון** ב-[My.JDownloader](https://my.jdownloader.org/)
-3. **התחבר** ב-JD2: `Settings → My.JDownloader`
-4. **שים לב לשם המכשיר** (Device Name) - זה מה שתכניס ב-`JD_DEVICE_NAME`
+1. **Download and install** [JDownloader 2](https://jdownloader.org/jdownloader2)
+2. **Create an account** at [My.JDownloader](https://my.jdownloader.org/)
+3. **Connect** in JD2: `Settings → My.JDownloader`
+4. **Note the Device Name** - this is what you'll enter in `JD_DEVICE_NAME`
 
 ---
 
-## 🤖 שימוש
+## 🤖 Usage
 
-### הפעלת הבוט
+### Running the bot
 ```bash
 python bot.py
 ```
-או:
+Or:
 ```bash
 run_bot.bat
 ```
 
-### פקודות זמינות
+### Available Commands
 
-| פקודה | תיאור |
-|--------|--------|
-| `/start` | התחלה והצגת הודעת ברוכים הבאים |
+| Command | Description |
+|---------|-------------|
+| `/start` | Start and display welcome message |
 
-### תהליך העבודה
+### Workflow
 
 ```mermaid
 graph LR
-    A[📎 שלח לינק] --> B{בחר סוג סריקה}
-    B -->|🚀 רגילה| C[סריקה מהירה]
-    B -->|🕷️ עמוקה| D[Deep-Decrypt]
-    C --> E[📋 בחר קבצים]
+    A[📎 Send Link] --> B{Choose Scan Type}
+    B -->|🚀 Regular| C[Quick Scan]
+    B -->|🕷️ Deep| D[Deep-Decrypt]
+    C --> E[📋 Select Files]
     D --> E
-    E --> F[⬇️ הורדה ב-JD2]
-    F --> G[📤 העלאה לטלגרם]
+    E --> F[⬇️ Download in JD2]
+    F --> G[📤 Upload to Telegram]
 ```
 
-1. **שלח לינק** → הבוט מזהה אוטומטית
-2. **בחר סוג סריקה** → רגילה (מהיר) או עמוקה (מקיף)
-3. **בחר קבצים** → ממשק אינטראקטיבי עם Toggle
-4. **לחץ Download** → JD2 מוריד, הבוט מעלה לטלגרם
+1. **Send a link** → Bot detects automatically
+2. **Choose scan type** → Regular (fast) or Deep (comprehensive)
+3. **Select files** → Interactive interface with Toggle
+4. **Click Download** → JD2 downloads, bot uploads to Telegram
 
 ---
 
-## 📁 מבנה הפרויקט
+## 📁 Project Structure
 
 ```
 Siphon/
-├── 📄 bot.py           # הבוט הראשי + ממשק טלגרם
-├── 📄 jd_client.py     # עטיפה ל-JDownloader API
-├── 📄 utils.py         # פונקציות עזר (FFmpeg, פורמטים)
-├── 📄 requirements.txt # תלויות Python
-├── 📄 run_bot.bat      # סקריפט הרצה (Windows)
-├── 📄 .env             # הגדרות סביבה (לא ב-Git)
-└── 📄 README.md        # אתה כאן! 👋
+├── 📄 bot.py           # Main bot + Telegram interface
+├── 📄 jd_client.py     # JDownloader API wrapper
+├── 📄 utils.py         # Helper functions (FFmpeg, formats)
+├── 📄 requirements.txt # Python dependencies
+├── 📄 run_bot.bat      # Run script (Windows)
+├── 📄 .env             # Environment settings (not in Git)
+└── 📄 README.md        # You are here! 👋
 ```
 
 ---
 
-## 🎨 תכונות ממשק
+## 🎨 Interface Features
 
-### 🌙 סרגל התקדמות ירח
+### 🌙 Moon Progress Bar
 ```
 🌕🌕🌕🌕🌖🌑🌑🌑🌑🌑 45%
 ```
 
-### 📊 דשבורד הורדה
+### 📊 Download Dashboard
 ```
-📥 מוריד... (סה"כ)
+📥 Downloading... (Total)
 ━━━━━━━━━━━━━━━━━━
 🌕🌕🌕🌕🌖🌑🌑🌑🌑🌑 45.2%
 📊 4.0GB/8.9GB
-📥 קובץ נוכחי: video_file.mp4
-⚡ מהירות: 15.3MB/s
-⏱️ זמן משוער: 05:23
-🗂 קבצים: 2/5
+📥 Current file: video_file.mp4
+⚡ Speed: 15.3MB/s
+⏱️ ETA: 05:23
+🗂 Files: 2/5
 ━━━━━━━━━━━━━━━━━━
 ```
 
 ---
 
-## 📦 תלויות
+## 📦 Dependencies
 
-| חבילה | תיאור |
-|--------|--------|
+| Package | Description |
+|---------|-------------|
 | `pyrogram` | Telegram Client API |
 | `myjdapi` | JDownloader 2 API |
-| `ffmpeg-python` | עטיפה ל-FFmpeg |
-| `python-dotenv` | טעינת משתני סביבה |
+| `ffmpeg-python` | FFmpeg wrapper |
+| `python-dotenv` | Environment variables loader |
 
 ---
 
-## ⚠️ הערות חשובות
+## ⚠️ Important Notes
 
 > [!IMPORTANT]
-> **JDownloader 2 חייב לרוץ ברקע** כדי שהבוט יעבוד!
+> **JDownloader 2 must be running in the background** for the bot to work!
 
 > [!TIP]
-> השתמש בסריקה עמוקה (Deep) לאתרים עם הגנות או לינקים מוסתרים.
+> Use Deep scanning for sites with protections or hidden links.
 
 > [!NOTE]
-> קבצים מעל 2GB יפוצלו אוטומטית לחלקים.
+> Files over 2GB will be automatically split into parts.
 
 ---
 
-## 📜 רישיון
+## 📜 License
 
-MIT License - ראה [LICENSE](LICENSE) לפרטים.
+MIT License - See [LICENSE](LICENSE) for details.
 
 ---
 
