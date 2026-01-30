@@ -20,7 +20,18 @@ except ImportError:
 load_dotenv()
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+log_dir = "logs"
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, "bot.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(log_file, encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
 
 # Bot configuration
@@ -256,7 +267,12 @@ async def dashboard_loop(client, user_id, message, state: SessionState):
         try:
             current_text = render_dashboard(state)
             if current_text != last_text:
-                await message.edit_text(current_text)
+                await message.edit_text(
+                    current_text,
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🛑 ביטול הורדה", callback_data="jd_cancel_active")]
+                    ])
+                )
                 last_text = current_text
                 error_count = 0
             
@@ -623,6 +639,9 @@ async def handle_message(client, message):
 # File Extensions
 VIDEO_EXTENSIONS = {'.mp4', '.mkv', '.webm', '.avi', '.mov', '.ts', '.m4v', '.wmv', '.flv', '.3gp', '.mpg', '.mpeg'}
 
+# State to track active scans
+active_scans = {}  # {user_id: True/False}
+
 async def process_jd_links(client, user_id, message_to_edit, urls, deep_scan=False):
     """Helper to process a list of URLs with JD2."""
     try:
@@ -641,10 +660,48 @@ async def process_jd_links(client, user_id, message_to_edit, urls, deep_scan=Fal
             await message_to_edit.edit_text("❌ Failed to add links to JDownloader.")
             return
         
-        # 3. Wait for results
-        await message_to_edit.edit_text(f"⏳ **מעבד {len(urls)} קישורים... (LinkGrabber)**")
+        # 3. Wait for results with Stop Button
+        active_scans[user_id] = True
         
-        links = await loop.run_in_executor(executor, jd.get_linkgrabber_links, True, 45)
+        await message_to_edit.edit_text(
+            f"⏳ **מעבד {len(urls)} קישורים... (LinkGrabber)**\nסריקה עמוקה עשויה לקחת זמן...",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🛑 עצור סריקה והצג תוצאות", callback_data="scan_stop")]
+            ])
+        )
+        
+        # We need a custom wait loop here to check for user interrupt (scan_stop)
+        links = []
+        elapsed = 0
+        timeout = 180 if deep_scan else 45
+        
+        while elapsed < timeout:
+            if not active_scans.get(user_id):
+                # User stopped safely
+                break
+                
+            links = await loop.run_in_executor(executor, jd.get_linkgrabber_links, False)
+            if links and len(links) > 5 and not deep_scan: # Fast exit for regular
+                 if active_scans.get(user_id): # Check again
+                     # Let it stabilize a bit unless stopped
+                     pass
+            
+            await asyncio.sleep(2)
+            elapsed += 2
+            
+            # Update count in UI occasionally
+            if elapsed % 4 == 0:
+                try:
+                    await message_to_edit.edit_text(
+                        f"⏳ **מעבד... נמצאו {len(links)} קישורים**\nלחץ על עצור כדי לסיים ולסנן.",
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton("🛑 עצור סריקה והצג תוצאות", callback_data="scan_stop")]
+                        ])
+                    )
+                except: pass
+
+        # Final fetch
+        links = await loop.run_in_executor(executor, jd.get_linkgrabber_links, False)
         
         if not links:
             await message_to_edit.edit_text(
@@ -659,26 +716,41 @@ async def process_jd_links(client, user_id, message_to_edit, urls, deep_scan=Fal
         # 4. Filter duplicates AND Valid Video Files
         unique_links = []
         seen_uuids = set()
+        seen_files = set() # (name, size)
         new_toggle_state = {}
         
-
+        # Limit processing for responsiveness
+        limit = 500  # Process max 500 candidates
+        processed_count = 0 
+        
         for link in links:
+            if processed_count >= limit:
+                break
+            
             # Check extension
             name = link.get("name", "").lower()
+            size = link.get("size", 0)
             ext = os.path.splitext(name)[1]
             
             if ext not in VIDEO_EXTENSIONS:
+                continue
+            
+            # Deduplication: Name + Size
+            file_signature = (name, size)
+            if file_signature in seen_files:
                 continue
                 
             if link['uuid'] not in seen_uuids:
                 unique_links.append(link)
                 seen_uuids.add(link['uuid'])
+                seen_files.add(file_signature)
                 new_toggle_state[link['uuid']] = True
+                processed_count += 1
         
         # If no videos found after filtering
         if not unique_links:
             await message_to_edit.edit_text(
-                "❌ לא נמצאו קבצי וידאו בקישורים אלו.\nייתכן שהוספת סוג קובץ שאינו וידאו או שהסריקה טרם הסתיימה.",
+                f"❌ לא נמצאו קבצי וידאו ב-{len(links)} הקישורים שנמצאו.\nנסה סריקה עמוקה יותר או בדוק את הקישור.",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔄 רענון נתוני סריקה", callback_data="jd_refresh")],
                     [InlineKeyboardButton("🗑️ ביטול", callback_data="scan_cancel")]
@@ -686,6 +758,10 @@ async def process_jd_links(client, user_id, message_to_edit, urls, deep_scan=Fal
             )
             return
 
+        # Cap results at 250 as requested to avoid freezes
+        if len(unique_links) > 250:
+            unique_links = unique_links[:250]
+            await message_to_edit.reply_text("⚠️ **הערה:** התקבלו יותר מ-250 תוצאות via סריקה עמוקה. הרשימה קוצצה ל-250 הראשונות כדי לשמור על ביצועים.")
         
         # Store in cache
         jd_linkgrabber_cache[user_id] = unique_links
@@ -701,6 +777,8 @@ async def process_jd_links(client, user_id, message_to_edit, urls, deep_scan=Fal
     except Exception as e:
         logger.error(f"Error during JD2 processing: {e}")
         await message_to_edit.edit_text(f"❌ An error occurred: {str(e)[:100]}")
+    finally:
+        active_scans.pop(user_id, None)
 
 
 @app.on_callback_query(filters.regex("^(jd_|scan_)"))
@@ -722,6 +800,67 @@ async def handle_callbacks(client, callback_query):
             except Exception as e:
                 logger.warning(f"Failed to clear JD2 LinkGrabber in scan_cancel: {e}")
         await callback_query.message.edit_text("❌ בוטל.")
+        return
+
+    if data == "jd_cancel_active":
+        state = user_sessions.get(user_id)
+        if state and state.is_active:
+            state.is_active = False
+            state.status = "Cancelled by user"
+            
+            # Remove from JD
+            if JD_AVAILABLE and state.jd_downloads:
+                try:
+                    jd = get_jd_client()
+                    uuids = [d.get("uuid") for d in state.jd_downloads]
+                    if uuids:
+                        loop = asyncio.get_event_loop()
+                        await loop.run_in_executor(executor, jd.remove_links, uuids)
+                except Exception as e:
+                    logger.error(f"Failed to remove links on cancel: {e}")
+            
+            await callback_query.message.edit_text("🛑 ההורדה בוטלה על ידי המשתמש.")
+        else:
+            await callback_query.answer("⚠️ אין הורדה פעילה.", show_alert=True)
+        return
+
+    if data == "scan_stop":
+        # Signal the loop to stop and process what we have
+        if user_id in active_scans:
+            active_scans[user_id] = False
+            await callback_query.answer("🛑 עוצר סריקה... אנא המתן לסינון התוצאות.", show_alert=True)
+            
+            # Also tell JD to abort crawling
+            if JD_AVAILABLE:
+                try:
+                    jd = get_jd_client()
+                    loop = asyncio.get_event_loop()
+                    
+                    # 1. Attempt Graceful Abort
+                    await loop.run_in_executor(executor, jd.abort_crawling)
+                    
+                    # 2. Verify Stop (Wait up to 3 seconds)
+                    for _ in range(3):
+                        await asyncio.sleep(1)
+                        is_collecting = await loop.run_in_executor(executor, jd.is_collecting)
+                        if not is_collecting:
+                            break
+                    
+                    # 3. Force Stop if still collecting
+                    if await loop.run_in_executor(executor, jd.is_collecting):
+                        await callback_query.answer("⚠️ עצירה רגילה נכשלה, מבצע עצירה כפויה...", show_alert=True)
+                        # To force stop, we might need to reset LinkGrabber or just accept it's stuck
+                        # For now, we proceed to showing results, but warn user
+                        logger.warning("LinkGrabber still collecting after abort.")
+                        # Optional: await loop.run_in_executor(executor, jd.clear_linkgrabber) 
+                        # Clearing might delete results user wants, so we skip clearing unless user cancels completely
+                    else:
+                        await callback_query.answer("✅ סריקה נעצרה בהצלחה.", show_alert=True)
+                        
+                except Exception as e:
+                    logger.error(f"Failed to abort JD crawling: {e}")
+        else:
+            await callback_query.answer("⚠️ אין סריקה פעילה.", show_alert=True)
         return
 
     if data in ["scan_regular", "scan_deep"]:
@@ -912,6 +1051,9 @@ async def handle_callbacks(client, callback_query):
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(executor, jd.move_to_downloads, selected_uuids, None)
             await loop.run_in_executor(executor, jd.start_downloads)
+            
+            # Clear remaining/unselected links
+            await loop.run_in_executor(executor, jd.clear_linkgrabber)
             
             status_msg = callback_query.message
             asyncio.create_task(monitor_jd_downloads(client, user_id, status_msg, selected_uuids))

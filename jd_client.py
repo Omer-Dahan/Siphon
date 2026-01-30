@@ -6,7 +6,7 @@ Uses myjdapi to communicate with JDownloader 2 via My.JDownloader API.
 import os
 import logging
 import time
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 from dotenv import load_dotenv
 from utils import format_size
 
@@ -67,16 +67,58 @@ class JDownloaderClient:
             return self.connect()
         return True
     
-    def add_to_linkgrabber(self, url: str, package_name: str = None, deep_scan: bool = False) -> bool:
+    def reconnect(self) -> bool:
+        """Force reconnection to My.JDownloader."""
+        try:
+            logger.info("🔄 Token invalid or session expired. Reconnecting...")
+            self.device = None
+            self._connected = False
+            # Optional: self.jd.disconnect() if supported, but usually just re-calling connect works
+            return self.connect()
+        except Exception as e:
+            logger.error(f"❌ Reconnection failed: {e}")
+            return False
+
+    def _execute_with_retry(self, func, default_return=False):
+        """
+        Execute a function and retry once if a token error occurs.
+        """
+        if not self.ensure_connected():
+            return default_return
+
+        try:
+            return func()
+        except Exception as e:
+            # Check for token invalid or other auth errors
+            # "TOKEN_INVALID" is the specific error from the user logs
+            error_str = str(e)
+            if "TOKEN_INVALID" in error_str or "Auth" in error_str or "ip check failed" in error_str.lower():
+                logger.warning(f"⚠️ API Error ({error_str}). Attempting to reconnect...")
+                
+                if self.reconnect():
+                    try:
+                        return func()
+                    except Exception as retry_e:
+                        logger.error(f"❌ Action failed after reconnect: {retry_e}")
+                        return default_return
+                else:
+                    logger.error("❌ Could not reconnect to retry action.")
+                    return default_return
+            
+            # If not a token error, or if it's a different error
+            logger.error(f"❌ Action failed: {e}")
+            return default_return
+
+    def add_to_linkgrabber(self, url: str, package_name: str = None, deep_scan: Union[bool, int] = False) -> bool:
         """
         Add a URL to LinkGrabber for extraction.
         Returns True if successfully added.
         """
-        if not self.ensure_connected():
-            return False
-        
-        try:
+        def action():
             logger.info(f"📥 Adding to LinkGrabber: {url[:50]}... (Deep: {deep_scan})")
+            # API expects boolean for deepDecrypt, regardless of what we pass in internally
+            is_deep = bool(deep_scan)
+            
             self.device.linkgrabber.add_links([{
                 "autostart": False,
                 "links": url,
@@ -86,13 +128,12 @@ class JDownloaderClient:
                 "downloadPassword": None,
                 "destinationFolder": self.download_dir,
                 "overwritePackagizerRules": True,
-                "deepDecrypt": deep_scan
+                "deepDecrypt": is_deep
             }])
             logger.info("✅ Link added to LinkGrabber")
             return True
-        except Exception as e:
-            logger.error(f"❌ Failed to add link: {e}")
-            return False
+
+        return self._execute_with_retry(action, default_return=False)
     
     def get_linkgrabber_links(self, wait_for_extraction: bool = True, timeout: int = 30) -> List[Dict]:
         """
@@ -103,7 +144,7 @@ class JDownloaderClient:
         if not self.ensure_connected():
             return []
         
-        try:
+        def action():
             start_time = time.time()
             links = []
             last_count = -1
@@ -112,12 +153,17 @@ class JDownloaderClient:
             
             while True:
                 # Query LinkGrabber for packages and links
+                # If these fail with TOKEN_INVALID, the wrapper catches it.
                 packages = self.device.linkgrabber.query_packages()
                 
                 all_links = []
                 for pkg in packages:
                     pkg_links = self.device.linkgrabber.query_links(params=[{
-                        "packageUUIDs": [pkg.get("uuid")]
+                        "packageUUIDs": [pkg.get("uuid")],
+                        "bytesTotal": True,
+                        "url": True,
+                        "availability": True,
+                        "enabled": True
                     }])
                     for link in pkg_links:
                         all_links.append({
@@ -135,16 +181,14 @@ class JDownloaderClient:
                 
                 # If not waiting for extraction, return immediately
                 if not wait_for_extraction:
-                    links = all_links
-                    break
+                    return all_links
                 
                 # Stability check: wait until link count stops changing
                 if current_count == last_count and current_count > 0:
                     stable_count_duration += 1
                     if stable_count_duration >= STABILITY_THRESHOLD:
                         logger.info(f"✅ LinkGrabber stabilized with {current_count} links")
-                        links = all_links
-                        break
+                        return all_links
                 else:
                     # Count changed, reset stability timer
                     stable_count_duration = 0
@@ -153,27 +197,21 @@ class JDownloaderClient:
                 # Timeout check
                 if time.time() - start_time > timeout:
                     logger.warning(f"⏱️ LinkGrabber extraction timeout (found {current_count} links)")
-                    links = all_links
-                    break
+                    return all_links
                 
                 time.sleep(1)
-            
-            logger.info(f"📋 Found {len(links)} links in LinkGrabber")
-            return links
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to query LinkGrabber: {e}")
-            return []
+
+        result = self._execute_with_retry(action, default_return=[])
+        # If result is None (from default_return generic usage? No, I passed [])
+        # Actually _execute_with_retry returns default_return on failure.
+        return result if result is not None else []
     
     def move_to_downloads(self, link_uuids: List[int] = None, package_uuids: List[int] = None) -> bool:
         """
         Move links from LinkGrabber to Downloads and start them.
         If no UUIDs provided, moves all.
         """
-        if not self.ensure_connected():
-            return False
-        
-        try:
+        def action():
             if link_uuids:
                 self.device.linkgrabber.move_to_downloadlist(link_uuids, [])
             elif package_uuids:
@@ -184,32 +222,71 @@ class JDownloaderClient:
             
             logger.info("✅ Moved links to Downloads")
             return True
-        except Exception as e:
-            logger.error(f"❌ Failed to move to downloads: {e}")
-            return False
+
+        return self._execute_with_retry(action, default_return=False)
+
+    def abort_crawling(self) -> bool:
+        """Abort current LinkGrabber crawling process."""
+        def action():
+            try:
+                if hasattr(self.device.linkgrabber, "abort"):
+                    self.device.linkgrabber.abort()
+                else:
+                    logger.info("📡 Manually calling linkgrabberv2/abort...")
+                    self.jd.app.call(
+                       self.device.device_encryption_token,
+                       self.device.session_token,
+                       "/linkgrabberv2/abort",
+                       self.device.device_id
+                    )
+
+            except Exception as e:
+                logger.warning(f"Standard abort failed, trying fallback: {e}")
+                self.device.request("linkgrabberv2", "abort")
+                
+            logger.info("🛑 Aborted LinkGrabber crawling")
+            return True
+
+        return self._execute_with_retry(action, default_return=False)
+
+    def is_collecting(self) -> bool:
+        """Check if LinkGrabber is currently collecting/crawling."""
+        def action():
+            # Based on debug output, is_collecting is a method on linkgrabber
+            if hasattr(self.device.linkgrabber, "is_collecting"):
+                return self.device.linkgrabber.is_collecting()
+            
+            # Fallback to direct API call if wrapper fails
+            try:
+                # myjdapi call format: call(enc_token, session_token, endpoint, device_id, args)
+                # endpoint: /linkgrabberv2/isCollecting
+                res = self.jd.app.call(
+                    self.device.device_encryption_token,
+                    self.device.session_token,
+                    "/linkgrabberv2/isCollecting",
+                    self.device.device_id
+                )
+                return bool(res)
+            except:
+                return False
+
+        return self._execute_with_retry(action, default_return=False)
     
     def clear_linkgrabber(self) -> bool:
         """Clear all links from LinkGrabber."""
-        if not self.ensure_connected():
-            return False
-        
-        try:
+        def action():
             self.device.linkgrabber.clear_list()
             logger.info("🧹 LinkGrabber cleared")
             return True
-        except Exception as e:
-            logger.error(f"❌ Failed to clear LinkGrabber: {e}")
-            return False
+
+        return self._execute_with_retry(action, default_return=False)
     
     def get_download_status(self) -> List[Dict]:
         """
         Get status of downloads in progress.
         Returns list with: uuid, name, progress, speed, status, etc.
         """
-        if not self.ensure_connected():
-            return []
-        
-        try:
+        def action():
             packages = self.device.downloads.query_packages()
             all_downloads = []
             
@@ -256,10 +333,8 @@ class JDownloaderClient:
                     })
             
             return all_downloads
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to query downloads: {e}")
-            return []
+
+        return self._execute_with_retry(action, default_return=[])
     
     def get_finished_downloads(self) -> List[Dict]:
         """Get list of completed downloads."""
@@ -268,37 +343,26 @@ class JDownloaderClient:
     
     def start_downloads(self) -> bool:
         """Start/resume all downloads."""
-        if not self.ensure_connected():
-            return False
-        
-        try:
+        def action():
             self.device.downloadcontroller.start_downloads()
             logger.info("▶️ Downloads started")
             return True
-        except Exception as e:
-            logger.error(f"❌ Failed to start downloads: {e}")
-            return False
+
+        return self._execute_with_retry(action, default_return=False)
     
     def pause_downloads(self, pause: bool = True) -> bool:
         """Pause or unpause all downloads."""
-        if not self.ensure_connected():
-            return False
-        
-        try:
+        def action():
             self.device.downloadcontroller.pause_downloads(pause)
             status = "paused" if pause else "resumed"
             logger.info(f"⏸️ Downloads {status}")
             return True
-        except Exception as e:
-            logger.error(f"❌ Failed to pause downloads: {e}")
-            return False
+
+        return self._execute_with_retry(action, default_return=False)
     
     def remove_finished(self) -> bool:
         """Remove finished downloads from the list."""
-        if not self.ensure_connected():
-            return False
-        
-        try:
+        def action():
             self.device.downloads.cleanup(
                 action="DELETE_FINISHED",
                 mode="REMOVE_LINKS_ONLY",
@@ -306,22 +370,17 @@ class JDownloaderClient:
             )
             logger.info("🧹 Finished downloads removed from list")
             return True
-        except Exception as e:
-            logger.error(f"❌ Failed to cleanup: {e}")
-            return False
+
+        return self._execute_with_retry(action, default_return=False)
     
     def remove_links(self, link_uuids: List[int]) -> bool:
         """Remove specific links by UUID."""
-        if not self.ensure_connected():
-            return False
-        
-        try:
+        def action():
             self.device.downloads.remove_links(link_uuids, [])
             logger.info(f"🗑️ Removed {len(link_uuids)} links from JDownloader")
             return True
-        except Exception as e:
-            logger.error(f"❌ Failed to remove links: {e}")
-            return False
+
+        return self._execute_with_retry(action, default_return=False)
     
 
 
