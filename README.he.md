@@ -2,6 +2,10 @@
 
 <div align="center">
 
+<p align="center">
+  <a href="README.md">English</a> &nbsp; &bull; &nbsp; <a href="README.he.md">עברית</a>
+</p>
+
 ![Version](https://img.shields.io/badge/version-2.0-blue?style=for-the-badge)
 ![Python](https://img.shields.io/badge/python-3.8+-green?style=for-the-badge&logo=python)
 ![Telegram](https://img.shields.io/badge/Telegram-Bot-blue?style=for-the-badge&logo=telegram)
@@ -75,29 +79,7 @@ JD_DEVICE_NAME=your_device_name
 JD_DOWNLOAD_DIR=C:\Users\you\Downloads\JD
 ```
 
----
-
-## ⚙️ הגדרת JDownloader 2
-
-1. **הורד והתקן** [JDownloader 2](https://jdownloader.org/jdownloader2)
-2. **צור חשבון** ב-[My.JDownloader](https://my.jdownloader.org/)
-3. **התחבר** ב-JD2: `Settings → My.JDownloader`
-4. **שים לב לשם המכשיר** (Device Name) - זה מה שתכניס ב-`JD_DEVICE_NAME`
-
----
-
-## 🤖 שימוש
-
-### הפעלת הבוט (לינוקס / Windows)
-```bash
-python bot.py
-```
-או:
-```bash
-run_bot.bat
-```
-
-### 🐧 הרצה על שרת לינוקס (Linux)
+### 🐧 התקנה כשירות רקע על שרת לינוקס (אופציונלי)
 
 בכדי להריץ את הבוט ברקע בשרת לינוקס ולוודא שהוא פועל אוטומטית גם לאחר הפעלה מחדש של השרת, מומלץ להריץ אותו כשירות `systemd`.
 
@@ -141,6 +123,28 @@ run_bot.bat
    ```bash
    sudo journalctl -u siphon-bot -f
    ```
+
+---
+
+## ⚙️ הגדרת JDownloader 2
+
+1. **הורד והתקן** [JDownloader 2](https://jdownloader.org/jdownloader2)
+2. **צור חשבון** ב-[My.JDownloader](https://my.jdownloader.org/)
+3. **התחבר** ב-JD2: `Settings → My.JDownloader`
+4. **שים לב לשם המכשיר** (Device Name) - זה מה שתכניס ב-`JD_DEVICE_NAME`
+
+---
+
+## 🤖 שימוש
+
+### הפעלת הבוט (לינוקס / Windows)
+```bash
+python bot.py
+```
+או:
+```bash
+run_bot.bat
+```
 
 ### פקודות זמינות
 

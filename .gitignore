@@ -57,3 +57,7 @@ Thumbs.db
 # Cursor & AI
 .cursorignore
 .cursorindexingignore
+
+# Logs
+logs/
+*.log

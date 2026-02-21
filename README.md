@@ -2,6 +2,10 @@
 
 <div align="center">
 
+<p align="center">
+  <a href="README.md">English</a> &nbsp; &bull; &nbsp; <a href="README.he.md">עברית</a>
+</p>
+
 ![Version](https://img.shields.io/badge/version-2.0-blue?style=for-the-badge)
 ![Python](https://img.shields.io/badge/python-3.8+-green?style=for-the-badge&logo=python)
 ![Telegram](https://img.shields.io/badge/Telegram-Bot-blue?style=for-the-badge&logo=telegram)
@@ -75,29 +79,7 @@ JD_DEVICE_NAME=your_device_name
 JD_DOWNLOAD_DIR=C:\Users\you\Downloads\JD
 ```
 
----
-
-## ⚙️ JDownloader 2 Setup
-
-1. **Download and install** [JDownloader 2](https://jdownloader.org/jdownloader2)
-2. **Create an account** at [My.JDownloader](https://my.jdownloader.org/)
-3. **Connect** in JD2: `Settings → My.JDownloader`
-4. **Note the Device Name** - this is what you'll enter in `JD_DEVICE_NAME`
-
----
-
-## 🤖 Usage
-
-### Running the bot (Windows / Local)
-```bash
-python bot.py
-```
-Or:
-```bash
-run_bot.bat
-```
-
-### 🐧 Running on a Linux Server
+### 🐧 Optional: Linux Server Deployment (Background Service)
 
 To run the bot in the background continuously on a Linux server and ensure it restarts automatically if the server reboots, you can set it up as a `systemd` service.
 
@@ -141,6 +123,28 @@ To run the bot in the background continuously on a Linux server and ensure it re
    ```bash
    sudo journalctl -u siphon-bot -f
    ```
+
+---
+
+## ⚙️ JDownloader 2 Setup
+
+1. **Download and install** [JDownloader 2](https://jdownloader.org/jdownloader2)
+2. **Create an account** at [My.JDownloader](https://my.jdownloader.org/)
+3. **Connect** in JD2: `Settings → My.JDownloader`
+4. **Note the Device Name** - this is what you'll enter in `JD_DEVICE_NAME`
+
+---
+
+## 🤖 Usage
+
+### Running the bot (Windows / Local)
+```bash
+python bot.py
+```
+Or:
+```bash
+run_bot.bat
+```
 
 ### Available Commands
 
