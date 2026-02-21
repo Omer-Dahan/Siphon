@@ -88,7 +88,7 @@ JD_DOWNLOAD_DIR=C:\Users\you\Downloads\JD
 
 ## 🤖 שימוש
 
-### הפעלת הבוט
+### הפעלת הבוט (לינוקס / Windows)
 ```bash
 python bot.py
 ```
@@ -96,6 +96,51 @@ python bot.py
 ```bash
 run_bot.bat
 ```
+
+### 🐧 הרצה על שרת לינוקס (Linux)
+
+בכדי להריץ את הבוט ברקע בשרת לינוקס ולוודא שהוא פועל אוטומטית גם לאחר הפעלה מחדש של השרת, מומלץ להריץ אותו כשירות `systemd`.
+
+1. **התקנת חבילת FFmpeg (חובה אם טרם הותקנה)**:
+   ```bash
+   sudo apt update
+   sudo apt install ffmpeg
+   ```
+
+2. **יצירת קובץ השירות של systemd**:
+   ```bash
+   sudo nano /etc/systemd/system/siphon-bot.service
+   ```
+
+3. **הדבק את התצורה הבאה** (יש לשנות את הנתיבים ואת שם המשתמש בהתאם למוגדר בשרת שלך):
+   ```ini
+   [Unit]
+   Description=Siphon JD2 Telegram Bot
+   After=network.target
+
+   [Service]
+   Type=simple
+   User=your_linux_user
+   WorkingDirectory=/path/to/siphon
+   ExecStart=/path/to/siphon/venv/bin/python bot.py
+   Restart=always
+   RestartSec=10
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+4. **הפעלה והגדרה מחדש של השרת להרצת השירות**:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable siphon-bot
+   sudo systemctl start siphon-bot
+   ```
+
+5. **צפייה בלוגים בזמן אמת**:
+   ```bash
+   sudo journalctl -u siphon-bot -f
+   ```
 
 ### פקודות זמינות
 

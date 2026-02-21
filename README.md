@@ -88,7 +88,7 @@ JD_DOWNLOAD_DIR=C:\Users\you\Downloads\JD
 
 ## 🤖 Usage
 
-### Running the bot
+### Running the bot (Windows / Local)
 ```bash
 python bot.py
 ```
@@ -96,6 +96,51 @@ Or:
 ```bash
 run_bot.bat
 ```
+
+### 🐧 Running on a Linux Server
+
+To run the bot in the background continuously on a Linux server and ensure it restarts automatically if the server reboots, you can set it up as a `systemd` service.
+
+1. **Install FFmpeg (if not already installed)**:
+   ```bash
+   sudo apt update
+   sudo apt install ffmpeg
+   ```
+
+2. **Create a systemd service file**:
+   ```bash
+   sudo nano /etc/systemd/system/siphon-bot.service
+   ```
+
+3. **Paste the following configuration** (modify the paths and user accordingly):
+   ```ini
+   [Unit]
+   Description=Siphon JD2 Telegram Bot
+   After=network.target
+
+   [Service]
+   Type=simple
+   User=your_linux_user
+   WorkingDirectory=/path/to/siphon
+   ExecStart=/path/to/siphon/venv/bin/python bot.py
+   Restart=always
+   RestartSec=10
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+4. **Enable and start the service**:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable siphon-bot
+   sudo systemctl start siphon-bot
+   ```
+
+5. **View logs**:
+   ```bash
+   sudo journalctl -u siphon-bot -f
+   ```
 
 ### Available Commands
 
